@@ -11,7 +11,7 @@ import ToolkitPage from "./pages/ToolkitPage"
 const navigation = [
   { to: "/", title: "Home", icon: Home, end: true, featured: true },
   { to: "/master-checklist", title: "Master Checklist", icon: ClipboardList },
-  { to: "/blogs", title: "Blogs and Posts", icon: Newspaper },
+  { to: "/news", title: "Top News", icon: Newspaper },
   { to: "/bug-reports", title: "Bug Reports", icon: FileText },
   { to: "/about", title: "About Me", icon: User },
   { to: "/toolkit", title: "Toolkit", icon: Wrench },
@@ -141,7 +141,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/about" element={<AboutPage />} />
-            <Route path="/blogs" element={<BlogsPage />} />
+            <Route path="/news" element={<BlogsPage />} />
             <Route path="/bug-reports" element={<BugReportsPage />} />
             <Route path="/toolkit" element={<ToolkitPage />} />
             <Route path="/master-checklist" element={<MasterChecklistPage />} />

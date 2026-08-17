@@ -35,7 +35,7 @@ const workspaces = [
     title: "Blogs and Posts",
     copy: "Maintain your useful posts, Medium links, tweets, and Reddit threads.",
     icon: Newspaper,
-    to: "/blogs",
+    to: "/news",
     accent: "bg-rose-100 text-rose-900",
   },
   {
@@ -157,8 +157,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Top Reports sidebar */}
-        <aside className="page-panel h-fit rounded-lg p-4">
+        <aside className="page-panel h-fit overflow-hidden rounded-lg p-4">
           <p className="eyebrow">Top Bounties</p>
           <h2 className="mt-1 text-xl font-extrabold text-neutral-950">Recent Reports</h2>
           <div className="mt-4 grid gap-2">
@@ -170,19 +169,19 @@ export default function HomePage() {
                   href={r.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="group flex items-start gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 transition hover:border-teal-400 hover:bg-white"
+                  className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 transition hover:border-teal-400 hover:bg-white"
                 >
-                  <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
-                  <div className="min-w-0 flex-1">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
+                  <div className="min-w-0 flex-1 overflow-hidden">
                     <p className="truncate text-xs font-bold text-neutral-950 group-hover:text-teal-700">
                       {r.vulnerability}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-stone-500">{r.company}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-stone-500">{r.company}</p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1 text-xs font-extrabold text-teal-700">
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md bg-teal-50 px-2 py-1 text-xs font-extrabold text-teal-700">
                     <DollarSign size={11} />
                     {fmt(r.bounty).replace("$", "")}
-                    <ArrowUpRight size={11} className="text-stone-400 transition group-hover:text-teal-500" />
+                    <ArrowUpRight size={11} className="ml-1 text-stone-400 transition group-hover:text-teal-500" />
                   </div>
                 </a>
               )

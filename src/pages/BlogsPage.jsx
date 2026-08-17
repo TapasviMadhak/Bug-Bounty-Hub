@@ -1,413 +1,311 @@
-import { CalendarDays, ExternalLink, Newspaper, Search, Tag } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
-import { blogPosts } from "../data/blogPosts"
+import {
+  ArrowUp,
+  Clock,
+  ExternalLink,
+  Flame,
+  MessageSquare,
+  RefreshCw,
+  Search,
+  TrendingUp,
+  User,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-const previewCache = new Map()
-const IMAGE_LOAD_TIMEOUT_MS = 2500
-const TWITTER_WIDGET_SRC = "https://platform.twitter.com/widgets.js"
-const REDDIT_WIDGET_SRC = "https://embed.reddit.com/widgets.js"
+const HN_API = "https://hacker-news.firebaseio.com/v0"
+const TOP_STORIES_URL = `${HN_API}/topstories.json`
+const ITEM_URL = (id) => `${HN_API}/item/${id}.json`
+const HN_ITEM_URL = (id) => `https://news.ycombinator.com/item?id=${id}`
+const TOP_N = 30
 
-const isTweet = (post) =>
-  post.type === "tweet" ||
-  post.source?.toLowerCase() === "tweet" ||
-  post.source?.toLowerCase() === "x" ||
-  post.source?.toLowerCase() === "twitter" ||
-  /(?:twitter\.com|x\.com)\/[^/]+\/status\/\d+/i.test(post.url)
-
-const isRedditPost = (post) =>
-  post.type === "reddit" ||
-  post.source?.toLowerCase() === "reddit" ||
-  /reddit\.com\/r\/[^/]+\/comments\/[^/]+/i.test(post.url)
-
-const getPostKind = (post) => {
-  if (isTweet(post)) return "tweet"
-  if (isRedditPost(post)) return "reddit"
-  return "article"
-}
-
-const getTweetEmbedUrl = (url) => url.replace(/^https?:\/\/(?:www\.)?x\.com\//i, "https://twitter.com/")
-
-const getHostname = (url) => new URL(url).hostname.replace(/^www\./, "")
-
-const getMediumResizeFillSize = (url) => {
-  const match = url.match(/resize:fill:(\d+):(\d+)/i)
-  if (!match) return null
-
-  return {
-    width: Number(match[1]),
-    height: Number(match[2]),
-  }
-}
-
-const isLikelyArticleCover = (imageUrl, pageUrl) => {
-  if (!imageUrl || imageUrl === pageUrl) return false
-  if (!/^https?:\/\//i.test(imageUrl)) return false
-
-  const lowerUrl = imageUrl.toLowerCase()
-  if (/avatar|profile|author|logo|icon|publication|resize:fill:32|resize:fill:64|resize:fill:76|resize:fill:96|resize:fill:128/.test(lowerUrl)) {
-    return false
-  }
-
-  const fillSize = getMediumResizeFillSize(lowerUrl)
-  if (fillSize && Math.max(fillSize.width, fillSize.height) < 300) return false
-
-  return true
-}
-
-const findMarkdownValue = (markdown, label) => {
-  const match = markdown.match(new RegExp(`^${label}:\\\\s*(.+)$`, "im"))
-  return match?.[1]?.trim()
-}
-
-const findArticleImage = (markdown, pageUrl) => {
-  const images = Array.from(markdown.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)).map((match) => match[1])
-  return images.find((image) => isLikelyArticleCover(image, pageUrl))
-}
-
-const fetchMicrolinkPreview = async (url, signal) => {
-  const endpoint = `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true`
-  const response = await fetch(endpoint, { signal })
-  if (!response.ok) return null
-
-  const payload = await response.json()
-  const data = payload?.data
-  if (!data) return null
-
-  return {
-    title: data.title,
-    description: data.description,
-    cover: [data.image?.url, data.screenshot?.url].find((image) => isLikelyArticleCover(image, url)),
-    publisher: data.publisher,
-  }
-}
-
-const fetchJinaPreview = async (url, signal) => {
-  const endpoint = `https://r.jina.ai/http://${url}`
-  const response = await fetch(endpoint, { signal })
-  if (!response.ok) return null
-
-  const markdown = await response.text()
-  const title = findMarkdownValue(markdown, "Title")
-  const cover = findArticleImage(markdown, url)
-
-  return {
-    title,
-    cover,
-    description: markdown
-      .split("\n")
-      .map((line) => line.trim())
-      .find((line) => line.length > 120 && !line.startsWith("!") && !line.startsWith("["))
-      ?.slice(0, 240),
-  }
-}
-
-const fetchArticlePreview = async (post, signal) => {
-  const microlinkPreview = await fetchMicrolinkPreview(post.url, signal).catch(() => null)
-  if (microlinkPreview?.cover) return microlinkPreview
-
-  const jinaPreview = await fetchJinaPreview(post.url, signal).catch(() => null)
-  return {
-    ...microlinkPreview,
-    ...jinaPreview,
-    cover: microlinkPreview?.cover || jinaPreview?.cover,
-  }
-}
-
-const loadScript = (src, onReady) => {
-  const existingScript = document.querySelector(`script[src="${src}"]`)
-  if (existingScript) {
-    onReady?.()
-    return
-  }
-
-  const script = document.createElement("script")
-  script.src = src
-  script.async = true
-  script.charset = "utf-8"
-  script.onload = () => onReady?.()
-  document.body.appendChild(script)
-}
-
-const formatDate = (date) => {
-  if (!date) return "Undated"
-
+const getHostname = (url) => {
   try {
-    return new Intl.DateTimeFormat("en", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }).format(new Date(date))
+    return new URL(url).hostname.replace(/^www\./, "")
   } catch {
-    return date
+    return "news.ycombinator.com"
   }
+}
+
+const formatTimeAgo = (unixTime) => {
+  if (!unixTime) return ""
+  const seconds = Math.floor(Date.now() / 1000) - unixTime
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+const formatScore = (score) => {
+  if (!score) return "0"
+  if (score >= 1000) return `${(score / 1000).toFixed(1)}k`
+  return String(score)
+}
+
+const getFaviconUrl = (url) => {
+  try {
+    const { hostname } = new URL(url)
+    return `https://www.google.com/s2/favicons?sz=32&domain=${hostname}`
+  } catch {
+    return null
+  }
+}
+
+async function fetchTopStoryIds() {
+  const res = await fetch(TOP_STORIES_URL)
+  if (!res.ok) throw new Error("Failed to fetch top stories")
+  const ids = await res.json()
+  return ids.slice(0, TOP_N)
+}
+
+async function fetchStory(id, signal) {
+  const res = await fetch(ITEM_URL(id), { signal })
+  if (!res.ok) return null
+  return res.json()
 }
 
 export default function BlogsPage() {
+  const [stories, setStories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState(null)
   const [query, setQuery] = useState("")
+  const abortRef = useRef(null)
 
-  const posts = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return blogPosts
+  const loadStories = useCallback(async (isRefresh = false) => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
-    return blogPosts.filter((post) => {
-      const haystack = [
-        post.title,
-        post.source,
-        post.description,
-        post.url,
-        ...(post.tags || []),
-      ]
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+    setError(null)
+
+    try {
+      const ids = await fetchTopStoryIds()
+      const settled = await Promise.allSettled(
+        ids.map((id) => fetchStory(id, controller.signal))
+      )
+
+      if (controller.signal.aborted) return
+
+      const items = settled
+        .map((r) => (r.status === "fulfilled" ? r.value : null))
         .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
+        .filter((item) => item.type === "story" && item.title)
 
-      return haystack.includes(q)
+      setStories(items)
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        setError("Failed to load Hacker News stories. Please try again.")
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    loadStories(false)
+    return () => abortRef.current?.abort()
+  }, [loadStories])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return stories
+    return stories.filter((s) => {
+      const hay = [s.title, s.by, s.url ? getHostname(s.url) : ""].join(" ").toLowerCase()
+      return hay.includes(q)
     })
-  }, [query])
-
-  useEffect(() => {
-    if (!posts.some(isTweet)) return
-
-    loadScript(TWITTER_WIDGET_SRC, () => window.twttr?.widgets?.load())
-  }, [posts])
-
-  useEffect(() => {
-    if (!posts.some(isRedditPost)) return
-
-    loadScript(REDDIT_WIDGET_SRC)
-  }, [posts])
+  }, [stories, query])
 
   return (
     <section className="space-y-5">
       <header className="page-panel rounded-lg p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="eyebrow">Daily Insights</p>
-            <h1 className="mt-2 text-4xl font-extrabold text-neutral-950">Blogs and Posts</h1>
+            <p className="eyebrow">Live Feed</p>
+            <h1 className="mt-2 text-4xl font-extrabold text-neutral-950 flex items-center gap-3">
+              <Flame size={32} className="text-orange-500" />
+              Top News
+            </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-600">
-              Curated articles, notes, and social posts for sharing useful security learning with others.
+              Live top 30 stories from Hacker News, updated on demand.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-900">
-            <Newspaper size={16} />
-            {blogPosts.length} posts
+
+          <div className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-bold text-orange-900">
+            <TrendingUp size={16} />
+            {stories.length} stories
           </div>
         </div>
 
-        <label className="mt-5 flex min-h-11 items-center gap-2 rounded-lg border border-stone-300 bg-stone-50 px-3">
-          <Search size={16} className="text-stone-500" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search posts by title, tag, source, or description..."
-            className="w-full bg-transparent text-sm text-stone-800 outline-none"
-          />
-        </label>
+        <div className="mt-5 flex gap-3">
+          <label className="flex-1 flex min-h-11 items-center gap-2 rounded-lg border border-stone-300 bg-stone-50 px-3">
+            <Search size={16} className="text-stone-500 shrink-0" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search stories by title, author, or domain…"
+              className="w-full bg-transparent text-sm text-stone-800 outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => loadStories(true)}
+            disabled={loading || refreshing}
+            title="Refresh stories"
+            className="action-button border border-stone-300 bg-white text-stone-700 hover:border-orange-400 hover:text-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {posts.length ? (
-          posts.map((post) => <PostCard key={post.id} post={post} />)
-        ) : (
-          <div className="page-panel rounded-lg p-8 text-center text-sm text-stone-500 xl:col-span-2">
-            No posts match your search.
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} onRetry={() => loadStories(false)} />
+      ) : filtered.length === 0 ? (
+        <div className="page-panel rounded-lg p-8 text-center text-sm text-stone-500">
+          {query ? "No stories match your search." : "No stories found."}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((story) => (
+            <StoryCard key={story.id} story={story} rank={stories.indexOf(story) + 1} />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
 
-function PostCard({ post }) {
-  const kind = getPostKind(post)
-
-  if (kind === "tweet") return <TweetPost post={post} />
-  if (kind === "reddit") return <RedditPost post={post} />
-  return <ArticlePost post={post} />
-}
-
-function ArticlePost({ post }) {
-  const [preview, setPreview] = useState(() => previewCache.get(post.url) || null)
-
-  useEffect(() => {
-    if (post.title && post.cover) return
-    if (previewCache.has(post.url)) return
-
-    const controller = new AbortController()
-    fetchArticlePreview(post, controller.signal)
-      .then((nextPreview) => {
-        if (!nextPreview) return
-        previewCache.set(post.url, nextPreview)
-        setPreview(nextPreview)
-      })
-      .catch(() => {})
-
-    return () => controller.abort()
-  }, [post])
-
-  const title = post.title || preview?.title || post.url
-  const description = post.description || preview?.description || "Open the source link to read the full post."
-  const cover = post.cover || preview?.cover
-  const source = post.source || preview?.publisher || getHostname(post.url)
+function StoryCard({ story, rank }) {
+  const host = story.url ? getHostname(story.url) : null
+  const faviconUrl = story.url ? getFaviconUrl(story.url) : null
+  const [faviconOk, setFaviconOk] = useState(true)
+  const commentUrl = HN_ITEM_URL(story.id)
 
   return (
-    <article className="page-panel overflow-hidden rounded-lg">
-      <ArticleCover key={cover || "fallback"} cover={cover} source={source} title={title} url={post.url} />
+    <article className="page-panel rounded-lg p-5 transition-all duration-200 hover:shadow-md group">
+      <div className="flex gap-4">
+        <div className="shrink-0 flex items-start pt-0.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 border border-orange-200 text-xs font-extrabold text-orange-600 font-mono">
+            {rank}
+          </span>
+        </div>
 
-      <div className="p-5">
-        <PostMeta post={post} source={source} />
-        <h2 className="mt-3 text-xl font-extrabold leading-snug text-neutral-950">{title}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-stone-600">{description}</p>
-        <PostTags tags={post.tags} />
-        <a
-          href={post.url}
-          target="_blank"
-          rel="noreferrer"
-          className="action-button mt-4 border border-stone-300 bg-white text-stone-700 hover:border-teal-500 hover:text-teal-700"
-        >
-          Read post
-          <ExternalLink size={14} />
-        </a>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            {faviconUrl && faviconOk && (
+              <img
+                src={faviconUrl}
+                alt=""
+                className="h-4 w-4 rounded-sm object-contain"
+                onError={() => setFaviconOk(false)}
+              />
+            )}
+            {host && <span className="text-stone-500">{host}</span>}
+            {host && <span className="h-1 w-1 rounded-full bg-stone-300" />}
+            <span className="inline-flex items-center gap-1">
+              <User size={11} />
+              {story.by}
+            </span>
+            <span className="h-1 w-1 rounded-full bg-stone-300" />
+            <span className="inline-flex items-center gap-1">
+              <Clock size={11} />
+              {formatTimeAgo(story.time)}
+            </span>
+          </div>
+
+          <a
+            href={story.url || commentUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 block text-lg font-extrabold leading-snug text-neutral-950 group-hover:text-orange-600 transition-colors duration-150"
+          >
+            {story.title}
+          </a>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-orange-50 border border-orange-200 px-2.5 py-1 text-xs font-bold text-orange-700">
+              <ArrowUp size={12} />
+              {formatScore(story.score)} pts
+            </span>
+
+            <a
+              href={commentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 border border-stone-200 px-2.5 py-1 text-xs font-bold text-stone-600 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700 transition-colors"
+            >
+              <MessageSquare size={12} />
+              {story.descendants ?? 0} comments
+            </a>
+
+            {story.url && (
+              <a
+                href={story.url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-orange-600 transition-colors"
+              >
+                Read article
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+        </div>
       </div>
     </article>
   )
 }
 
-function ArticleCover({ cover, source, title, url }) {
-  const [imageState, setImageState] = useState(cover ? "loading" : "fallback")
-  const fallbackTimerRef = useRef(null)
-  const imageRef = useRef(null)
-
-  const clearFallbackTimer = () => {
-    if (fallbackTimerRef.current) {
-      clearTimeout(fallbackTimerRef.current)
-      fallbackTimerRef.current = null
-    }
-  }
-
-  useEffect(() => {
-    clearFallbackTimer()
-
-    if (!cover) return undefined
-
-    fallbackTimerRef.current = setTimeout(() => {
-      if (imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
-        setImageState("loaded")
-        return
-      }
-
-      setImageState("fallback")
-    }, IMAGE_LOAD_TIMEOUT_MS)
-
-    return clearFallbackTimer
-  }, [cover])
-
-  if (!cover || imageState === "fallback") {
-    return <ArticleCoverFallback source={source} />
-  }
-
+function LoadingState() {
   return (
-    <a href={url} target="_blank" rel="noreferrer" aria-label={`Open ${title}`} className="relative block h-52">
-      {imageState === "loading" ? (
-        <ArticleCoverFallback source={source} compact />
-      ) : null}
-      <img
-        ref={imageRef}
-        src={cover}
-        alt=""
-        className={[
-          "absolute inset-0 h-full w-full object-cover transition-opacity duration-200",
-          imageState === "loaded" ? "opacity-100" : "opacity-0",
-        ].join(" ")}
-        loading="lazy"
-        onLoad={() => {
-          clearFallbackTimer()
-          setImageState("loaded")
-        }}
-        onError={() => {
-          clearFallbackTimer()
-          setImageState("fallback")
-        }}
-      />
-    </a>
-  )
-}
-
-function ArticleCoverFallback({ source, compact = false }) {
-  return (
-    <div
-      className={[
-        "flex items-center justify-center bg-neutral-950 px-6 text-center text-stone-100",
-        compact ? "absolute inset-0" : "h-36",
-      ].join(" ")}
-    >
-      <p className="text-lg font-extrabold">{source}</p>
-    </div>
-  )
-}
-
-function TweetPost({ post }) {
-  const source = post.source?.toLowerCase() === "tweet" ? "X / Twitter" : post.source || "X / Twitter"
-  const embedUrl = getTweetEmbedUrl(post.url)
-
-  return (
-    <article className="page-panel rounded-lg p-5">
-      <PostMeta post={post} source={source} />
-      {post.description ? <p className="mt-3 text-sm leading-relaxed text-stone-600">{post.description}</p> : null}
-      <div className="mt-4 overflow-hidden rounded-lg border border-stone-200 bg-stone-50 p-3">
-        <blockquote className="twitter-tweet" data-dnt="true" data-theme="light">
-          <a href={embedUrl}>{post.title || embedUrl}</a>
-        </blockquote>
-      </div>
-      <PostTags tags={post.tags} />
-    </article>
-  )
-}
-
-function RedditPost({ post }) {
-  const source = post.source?.toLowerCase() === "reddit" ? "Reddit" : post.source || "Reddit"
-
-  return (
-    <article className="page-panel rounded-lg p-5">
-      <PostMeta post={post} source={source} />
-      {post.description ? <p className="mt-3 text-sm leading-relaxed text-stone-600">{post.description}</p> : null}
-      <div className="mt-4 overflow-hidden rounded-lg border border-stone-200 bg-stone-50 p-3">
-        <blockquote className="reddit-embed-bq" data-embed-showtitle="true" data-embed-theme="light">
-          <a href={post.url}>{post.title || post.url}</a>
-        </blockquote>
-      </div>
-      <PostTags tags={post.tags} />
-    </article>
-  )
-}
-
-function PostMeta({ post, source }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
-      <span>{source}</span>
-      <span className="h-1 w-1 rounded-full bg-stone-300" />
-      <span className="inline-flex items-center gap-1">
-        <CalendarDays size={13} />
-        {formatDate(post.publishedAt)}
-      </span>
-    </div>
-  )
-}
-
-function PostTags({ tags = [] }) {
-  if (!tags.length) return null
-
-  return (
-    <div className="mt-4 flex flex-wrap gap-1.5">
-      {tags.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex items-center gap-1 rounded-md bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-600"
-        >
-          <Tag size={12} />
-          {tag}
-        </span>
+    <div className="space-y-3">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="page-panel rounded-lg p-5 animate-pulse">
+          <div className="flex gap-4">
+            <div className="h-8 w-8 rounded-lg bg-stone-200 shrink-0" />
+            <div className="flex-1 space-y-3">
+              <div className="flex gap-2">
+                <div className="h-3 w-20 rounded bg-stone-200" />
+                <div className="h-3 w-16 rounded bg-stone-200" />
+                <div className="h-3 w-14 rounded bg-stone-200" />
+              </div>
+              <div className="h-5 w-3/4 rounded bg-stone-200" />
+              <div className="h-5 w-1/2 rounded bg-stone-200" />
+              <div className="flex gap-2 mt-2">
+                <div className="h-6 w-20 rounded-md bg-stone-200" />
+                <div className="h-6 w-24 rounded-md bg-stone-200" />
+              </div>
+            </div>
+          </div>
+        </div>
       ))}
+    </div>
+  )
+}
+
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="page-panel rounded-lg p-10 text-center space-y-4">
+      <p className="text-4xl">⚠️</p>
+      <p className="font-bold text-neutral-950">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="action-button border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 mx-auto"
+      >
+        <RefreshCw size={14} />
+        Try again
+      </button>
     </div>
   )
 }
