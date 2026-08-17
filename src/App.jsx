@@ -2,7 +2,7 @@ import { ClipboardList, FileText, Home, Moon, Newspaper, ShieldCheck, Sun, User,
 import { useEffect, useRef, useState } from "react"
 import { NavLink, Route, Routes } from "react-router-dom"
 import AboutPage from "./pages/AboutPage"
-import BlogsPage from "./pages/BlogsPage"
+import NewsPage from "./pages/NewsPage"
 import BugReportsPage from "./pages/BugReportsPage"
 import HomePage from "./pages/HomePage"
 import MasterChecklistPage from "./pages/MasterChecklistPage"
@@ -141,7 +141,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/about" element={<AboutPage />} />
-            <Route path="/news" element={<BlogsPage />} />
+            <Route path="/news" element={<NewsPage />} />
             <Route path="/bug-reports" element={<BugReportsPage />} />
             <Route path="/toolkit" element={<ToolkitPage />} />
             <Route path="/master-checklist" element={<MasterChecklistPage />} />

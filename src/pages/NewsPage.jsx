@@ -65,7 +65,7 @@ async function fetchStory(id, signal) {
   return res.json()
 }
 
-export default function BlogsPage() {
+export default function NewsPage() {
   const [stories, setStories] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)

@@ -11,7 +11,6 @@ import {
   User,
 } from "lucide-react"
 import { Link } from "react-router-dom"
-import { blogPosts } from "../data/blogPosts"
 import { disclosedReports, SEVERITY_META } from "../data/bugReports"
 import { tools } from "../data/content"
 import { criticalFallbacks, roadmapPhases } from "../data/checklistRoadmap"
@@ -61,7 +60,6 @@ const roadmapSteps =
 const stats = [
   { label: "Roadmap Steps", value: roadmapSteps },
   { label: "Tools", value: tools.length },
-  { label: "Saved Posts", value: blogPosts.length },
   { label: "Disclosed Reports", value: disclosedReports.length },
 ]
 
@@ -169,20 +167,20 @@ export default function HomePage() {
                   href={r.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 transition hover:border-teal-400 hover:bg-white"
+                  className="group block rounded-lg border border-stone-200 bg-stone-50 p-3 transition hover:border-teal-400 hover:bg-white"
                 >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
-                  <div className="min-w-0 flex-1 overflow-hidden">
-                    <p className="truncate text-xs font-bold text-neutral-950 group-hover:text-teal-700">
-                      {r.vulnerability}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] text-stone-500">{r.company}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
+                    <div className="ml-auto flex items-center gap-0.5 rounded-md bg-teal-50 px-2 py-0.5 text-xs font-extrabold text-teal-700">
+                      <DollarSign size={11} />
+                      {fmt(r.bounty).replace("$", "")}
+                      <ArrowUpRight size={11} className="ml-1 text-stone-400 transition group-hover:text-teal-500" />
+                    </div>
                   </div>
-                  <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md bg-teal-50 px-2 py-1 text-xs font-extrabold text-teal-700">
-                    <DollarSign size={11} />
-                    {fmt(r.bounty).replace("$", "")}
-                    <ArrowUpRight size={11} className="ml-1 text-stone-400 transition group-hover:text-teal-500" />
-                  </div>
+                  <p className="mt-1.5 text-xs font-bold leading-snug text-neutral-950 group-hover:text-teal-700">
+                    {r.vulnerability}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-stone-500">{r.company}</p>
                 </a>
               )
             })}
